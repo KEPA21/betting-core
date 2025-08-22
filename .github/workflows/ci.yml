@@ -27,6 +27,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core
       TEST_DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core_test
+      RATE_LIMIT_ENABLED: "false"
       # om du har andra env som krävs i appen kan du lägga dem här
 
     steps:

@@ -9,11 +9,10 @@ from app.schemas.odds import OddsBulkIn
 from app.schemas.pages import OddsPage
 from app.schemas.errors import ErrorResponse
 from app.core.db import get_db
-from app.core.limiter import limit_odds_ingest
 from app.core.docs import DEFAULT_ERROR_RESPONSES
 from app.core.pagination import encode_cursor, decode_cursor
 from app.core.ratelimit import per_key_limiter, global_limiter, noop_dependency
-from app.crud.odds import bulk_upsert_odds, list_odds_page
+from app.crud.odds import bulk_upsert_odds
 from app.core.settings import settings
 from app.core.security import require_scopes
 
@@ -68,7 +67,7 @@ def _ensure_fk_exists_for_odds(db: Session, rows: list[dict]) -> None:
         dependencies=[
             Depends(require_scopes("odds:write")), 
             Depends(_limit_odds_per_key), 
-            #Depends(_limit_odds_global)
+            Depends(_limit_odds_global)
         ]
     )
 def post_odds(payload: OddsBulkIn, db: Session = Depends(get_db)):
