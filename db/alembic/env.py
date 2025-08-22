@@ -8,6 +8,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+if url := os.getenv("DATABASE_URL"):
+    context.config.set_main_option("sqlalchemy.url", url)
+
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = os.getenv("DB_PORT", "5433")  # byt till "5432" om du kör den
 DB_USER = os.getenv("DB_USER", "betting")
