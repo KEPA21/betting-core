@@ -1,35 +1,3 @@
-name: CI
-
-on:
-  push:
-  pull_request:
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: betting
-          POSTGRES_PASSWORD: betting
-          POSTGRES_DB: betting_core
-        ports:
-          - 5433:5432
-        # liten healthcheck så vi kan vänta korrekt
-        options: >-
-          --health-cmd="pg_isready -U betting -d postgres"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-
-    env:
-      DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core
-      TEST_DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core_test
-      RATE_LIMIT_ENABLED: "false"
-      # om du har andra env som krävs i appen kan du lägga dem här
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,6 +12,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      # NYTT: psql-klient (ger pg_isready och psql)
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Wait for Postgres (extra gardering)
         run: |
           for i in {1..60}; do
@@ -55,10 +29,8 @@ jobs:
         env:
           PGPASSWORD: betting
         run: |
-          # Skapa betting_core (om din service inte redan gjorde det)
           psql -h localhost -p 5433 -U betting -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='betting_core'" | grep -q 1 \
             || psql -h localhost -p 5433 -U betting -d postgres -c "CREATE DATABASE betting_core"
-          # Skapa betting_core_test
           psql -h localhost -p 5433 -U betting -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='betting_core_test'" | grep -q 1 \
             || psql -h localhost -p 5433 -U betting -d postgres -c "CREATE DATABASE betting_core_test"
 
@@ -71,6 +43,20 @@ jobs:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: |
           alembic -c db/alembic.ini upgrade head
+
+      # NYTT: seed för MAIN-DB
+      - name: Seed reference data (main)
+        env:
+          PGPASSWORD: betting
+        run: |
+          psql -h localhost -p 5433 -U betting -d betting_core -v ON_ERROR_STOP=1 -f db/seed_test.sql
+
+      # NYTT: seed för TEST-DB (som testerna använder)
+      - name: Seed reference data (test)
+        env:
+          PGPASSWORD: betting
+        run: |
+          psql -h localhost -p 5433 -U betting -d betting_core_test -v ON_ERROR_STOP=1 -f db/seed_test.sql
 
       - name: Run tests
         run: |
