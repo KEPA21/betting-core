@@ -1,3 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: betting
+          POSTGRES_PASSWORD: betting
+          POSTGRES_DB: betting_core
+        ports:
+          - 5433:5432
+        # liten healthcheck så vi kan vänta korrekt
+        options: >-
+          --health-cmd="pg_isready -U betting -d postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core
+      TEST_DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core_test
+      RATE_LIMIT_ENABLED: "false"
+      # om du har andra env som krävs i appen kan du lägga dem här
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
