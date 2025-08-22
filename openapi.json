@@ -1,0 +1,1288 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "100kbetting \u2013 Core API",
+    "description": "Ingest och exponering av odds, predictions och bets.",
+    "contact": {
+      "name": "100kbetting",
+      "url": "https://example.com/"
+    },
+    "license": {
+      "name": "Proprietary"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "system",
+          "system"
+        ],
+        "summary": "Snabb h\u00e4lsokoll",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "system",
+          "system"
+        ],
+        "summary": "Readiness mot DB",
+        "operationId": "readyz_readyz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/odds": {
+      "post": {
+        "tags": [
+          "odds"
+        ],
+        "summary": "Bulk upsert odds",
+        "description": "Tar emot en lista av odds-snapshots och upsertar dem mot unik nyckel (match_id, bookmaker_id, selection_id, captured_at).",
+        "operationId": "post_odds_odds_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OddsBulkIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Insatta/uppdaterade counts",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Valideringsfel"
+          },
+          "429": {
+            "description": "Rate limit \u00f6vertr\u00e4dd"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "odds",
+          "odds"
+        ],
+        "summary": "Lista odds",
+        "operationId": "get_odds_odds_get",
+        "parameters": [
+          {
+            "name": "match_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Match Id"
+            }
+          },
+          {
+            "name": "bookmaker_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bookmaker Id"
+            }
+          },
+          {
+            "name": "selection_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Selection Id"
+            }
+          },
+          {
+            "name": "ts_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ts From"
+            }
+          },
+          {
+            "name": "ts_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ts To"
+            }
+          },
+          {
+            "name": "market_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Market Code"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista med pagination (total/next_offset)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OddsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predictions": {
+      "post": {
+        "tags": [
+          "predictions",
+          "predictions"
+        ],
+        "summary": "Bulk upsert predictions",
+        "operationId": "post_predictions_predictions_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionsBulkIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "predictions",
+          "predictions"
+        ],
+        "summary": "Lista predictions",
+        "operationId": "get_predictions_predictions_get",
+        "parameters": [
+          {
+            "name": "match_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Match Id"
+            }
+          },
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
+            "name": "selection_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Selection Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bets": {
+      "post": {
+        "tags": [
+          "bets",
+          "bets"
+        ],
+        "summary": "Skapa bet (idempotent)",
+        "operationId": "post_bet_bets_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BetIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BetCreateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "bets",
+          "bets"
+        ],
+        "summary": "Lista bets",
+        "operationId": "get_bets_bets_get",
+        "parameters": [
+          {
+            "name": "user_ref",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Ref"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BetsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BetCreateOut": {
+        "properties": {
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          },
+          "bet_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bet Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created"
+        ],
+        "title": "BetCreateOut"
+      },
+      "BetIn": {
+        "properties": {
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "user_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Ref"
+          },
+          "match_id": {
+            "type": "string",
+            "title": "Match Id"
+          },
+          "bookmaker_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bookmaker Id"
+          },
+          "selection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Selection Id"
+          },
+          "stake": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Stake"
+          },
+          "price": {
+            "type": "number",
+            "exclusiveMinimum": 1.0,
+            "title": "Price"
+          },
+          "placed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Placed At"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "match_id",
+          "bookmaker_id",
+          "selection_id",
+          "stake",
+          "price",
+          "placed_at"
+        ],
+        "title": "BetIn",
+        "examples": [
+          {
+            "bookmaker_id": "024c6a47-1a14-4549-935f-31e22e747670",
+            "external_id": "ticket-123",
+            "idempotency_key": "abc-123",
+            "match_id": "m1",
+            "placed_at": "2025-08-18T12:30:00Z",
+            "price": 2.1,
+            "selection_id": "bea8671c-e889-4e3d-91d3-b407bc186408",
+            "stake": 100.0,
+            "user_ref": "user42"
+          }
+        ]
+      },
+      "BetItem": {
+        "properties": {
+          "bet_id": {
+            "type": "string",
+            "title": "Bet Id"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "user_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Ref"
+          },
+          "match_id": {
+            "type": "string",
+            "title": "Match Id"
+          },
+          "bookmaker_id": {
+            "type": "string",
+            "title": "Bookmaker Id"
+          },
+          "selection_id": {
+            "type": "string",
+            "title": "Selection Id"
+          },
+          "stake": {
+            "type": "number",
+            "title": "Stake"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "placed_at": {
+            "type": "string",
+            "title": "Placed At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "payout": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payout"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bet_id",
+          "external_id",
+          "user_ref",
+          "match_id",
+          "bookmaker_id",
+          "selection_id",
+          "stake",
+          "price",
+          "placed_at",
+          "status",
+          "result",
+          "payout",
+          "idempotency_key"
+        ],
+        "title": "BetItem"
+      },
+      "BetsPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BetItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next_offset"
+        ],
+        "title": "BetsPage"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OddsBulkIn": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OddsIn"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "OddsBulkIn",
+        "examples": [
+          {
+            "items": [
+              {
+                "bookmaker_id": "024c6a47-1a14-4549-935f-31e22e747670",
+                "captured_at": "2025-08-18T12:00:00Z",
+                "match_id": "m1",
+                "price": 2.04,
+                "probability": 0.49,
+                "selection_id": "bea8671c-e889-4e3d-91d3-b407bc186408",
+                "source": "feed-x"
+              },
+              {
+                "bookmaker_id": "024c6a47-1a14-4549-935f-31e22e747670",
+                "captured_at": "2025-08-18T12:05:00Z",
+                "match_id": "m1",
+                "price": 1.95,
+                "probability": 0.51,
+                "selection_id": "bea8671c-e889-4e3d-91d3-b407bc186408",
+                "source": "feed-x"
+              }
+            ]
+          }
+        ]
+      },
+      "OddsIn": {
+        "properties": {
+          "match_id": {
+            "type": "string",
+            "title": "Match Id"
+          },
+          "bookmaker_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bookmaker Id"
+          },
+          "selection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Selection Id"
+          },
+          "price": {
+            "type": "number",
+            "exclusiveMinimum": 1.0,
+            "title": "Price"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checksum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "match_id",
+          "bookmaker_id",
+          "selection_id",
+          "price",
+          "captured_at"
+        ],
+        "title": "OddsIn",
+        "examples": [
+          {
+            "bookmaker_id": "024c6a47-1a14-4549-935f-31e22e747670",
+            "captured_at": "2025-08-18T12:00:00Z",
+            "match_id": "m1",
+            "price": 2.04,
+            "probability": 0.49,
+            "selection_id": "bea8671c-e889-4e3d-91d3-b407bc186408",
+            "source": "feed-x"
+          }
+        ]
+      },
+      "OddsItem": {
+        "properties": {
+          "odds_id": {
+            "type": "string",
+            "title": "Odds Id"
+          },
+          "match_id": {
+            "type": "string",
+            "title": "Match Id"
+          },
+          "bookmaker_id": {
+            "type": "string",
+            "title": "Bookmaker Id"
+          },
+          "selection_id": {
+            "type": "string",
+            "title": "Selection Id"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
+          },
+          "captured_at": {
+            "type": "string",
+            "title": "Captured At"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checksum"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "odds_id",
+          "match_id",
+          "bookmaker_id",
+          "selection_id",
+          "price",
+          "probability",
+          "captured_at",
+          "source",
+          "checksum",
+          "created_at"
+        ],
+        "title": "OddsItem"
+      },
+      "OddsPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OddsItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next_offset"
+        ],
+        "title": "OddsPage"
+      },
+      "PredictionIn": {
+        "properties": {
+          "match_id": {
+            "type": "string",
+            "title": "Match Id"
+          },
+          "model_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Model Id"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "selection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Selection Id"
+          },
+          "probability": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Probability"
+          },
+          "odds_fair": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Odds Fair"
+          },
+          "features": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Features"
+          }
+        },
+        "type": "object",
+        "required": [
+          "match_id",
+          "model_id",
+          "version",
+          "selection_id",
+          "probability"
+        ],
+        "title": "PredictionIn",
+        "examples": [
+          {
+            "features": {
+              "home_form": 0.65
+            },
+            "match_id": "m1",
+            "model_id": "00000000-0000-0000-0000-000000000001",
+            "odds_fair": 1.72,
+            "probability": 0.58,
+            "selection_id": "bea8671c-e889-4e3d-91d3-b407bc186408",
+            "version": "1.0"
+          }
+        ]
+      },
+      "PredictionItem": {
+        "properties": {
+          "prediction_id": {
+            "type": "string",
+            "title": "Prediction Id"
+          },
+          "match_id": {
+            "type": "string",
+            "title": "Match Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "selection_id": {
+            "type": "string",
+            "title": "Selection Id"
+          },
+          "probability": {
+            "type": "number",
+            "title": "Probability"
+          },
+          "odds_fair": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Odds Fair"
+          },
+          "features": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Features"
+          },
+          "predicted_add": {
+            "type": "string",
+            "title": "Predicted Add"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prediction_id",
+          "match_id",
+          "model_id",
+          "version",
+          "selection_id",
+          "probability",
+          "odds_fair",
+          "features",
+          "predicted_add"
+        ],
+        "title": "PredictionItem"
+      },
+      "PredictionsBulkIn": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PredictionIn"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "PredictionsBulkIn"
+      },
+      "PredictionsPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PredictionItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next_offset"
+        ],
+        "title": "PredictionsPage"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "H\u00e4lso- & readiness-endpoints"
+    },
+    {
+      "name": "odds",
+      "description": "Ingest & l\u00e4sning av odds (bulk upsert)"
+    },
+    {
+      "name": "predictions",
+      "description": "Modellprediktioner per match och version"
+    },
+    {
+      "name": "bets",
+      "description": "Registrering och l\u00e4sning av bets (idempotent)"
+    }
+  ]
+}
