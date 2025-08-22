@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+      fail-fast: false
+    continue-on-error: ${{ matrix.python-version == '3.13' }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: betting_core
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U postgres -d betting_core"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping || exit 1"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+
+    env:
+      # Pekar mot service-containern "postgres" via localhost:5432 i Actions
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/betting_core
+      REDIS_URL: redis://localhost:6379/0
+      API_KEYS: writer1=read,odds:write,predictions:write,bets:write;reader1=read
+      RATE_LIMIT_ENABLED: "false"  # sätt "true" om du vill testa limiter i CI
+      ENABLE_TRACING: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # valfritt: dev-krav om du har dem
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          # valfritt: pre-commit om du använder hooks
+          pip install pre-commit
+
+      - name: Wait for DB to be ready
+        run: |
+          for i in {1..60}; do
+            pg_isready -h localhost -p 5432 -U postgres && break
+            sleep 1
+          done
+
+      # KÖR MIGRATIONER/SCHEMA – justera till ditt projekt
+      - name: Run migrations / init schema
+        run: |
+          # Exempel 1: Alembic (om du använder det)
+          if [ -f alembic.ini ]; then
+            pip install alembic
+            alembic upgrade head
+          # Exempel 2: ren SQL-init (byt sökväg till din .sql om du har en)
+          elif [ -f docker/sql/init.sql ]; then
+            PGPASSWORD=postgres psql -h localhost -U postgres -d betting_core -f docker/sql/init.sql
+          else
+            echo "No migration/init script found; adjust this step to your project."
+          fi
+
+      - name: Lint (pre-commit)
+        run: |
+          if [ -f .pre-commit-config.yaml ]; then
+            pre-commit run --all-files
+          else
+            echo "No .pre-commit-config.yaml; skipping."
+          fi
+
+      - name: Run tests
+        run: |
+          pytest -q --cov=app --cov-report=term-missing
