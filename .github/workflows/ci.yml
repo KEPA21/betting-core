@@ -67,36 +67,22 @@ jobs:
             || psql -h localhost -p 5433 -U betting -d postgres -c "CREATE DATABASE betting_core_test"
 
       - name: Run Alembic migrations (main)
-        run: |
-          alembic -c db/alembic.ini upgrade head
+        run: alembic -c db/alembic.ini upgrade head
+
+      - name: Seed main DB
+        env:
+          PGPASSWORD: betting
+        run: psql -h localhost -p 5433 -U betting -d betting_core -v ON_ERROR_STOP=1 -f db/seed_test.sql
 
       - name: Run Alembic migrations (test)
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
-        run: |
-          alembic -c db/alembic.ini upgrade head
+        run: alembic -c db/alembic.ini upgrade head
 
-      - name: Verify schema exists in test DB
+      - name: Seed test DB
         env:
           PGPASSWORD: betting
-        run: |
-          psql -h localhost -p 5433 -U betting -d betting_core_test -v ON_ERROR_STOP=1 -c "SELECT 'schema core exists?' AS q, EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name='core') AS ok;"
-          psql -h localhost -p 5433 -U betting -d betting_core_test -c "\dn"
-          psql -h localhost -p 5433 -U betting -d betting_core_test -c "\dt core.*"
-
-      # NYTT: seed för MAIN-DB
-      - name: Seed reference data (main)
-        env:
-          PGPASSWORD: betting
-        run: |
-          psql -h localhost -p 5433 -U betting -d betting_core -v ON_ERROR_STOP=1 -f db/seed_test.sql
-
-      # NYTT: seed för TEST-DB (som testerna använder)
-      - name: Seed reference data (test)
-        env:
-          PGPASSWORD: betting
-        run: |
-          psql -h localhost -p 5433 -U betting -d betting_core_test -v ON_ERROR_STOP=1 -f db/seed_test.sql
+        run: psql -h localhost -p 5433 -U betting -d betting_core_test -v ON_ERROR_STOP=1 -f db/seed_test.sql
 
       - name: Run tests
         run: |
