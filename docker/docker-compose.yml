@@ -26,7 +26,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    
+
   adminer:
     image: adminer:4
     ports:
@@ -34,7 +34,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-  
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
@@ -45,6 +45,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-      
+
 volumes:
   db_data:

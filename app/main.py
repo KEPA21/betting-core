@@ -1,15 +1,18 @@
+import os
+import logging
 from dotenv import load_dotenv
-load_dotenv()
-
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.exc import IntegrityError
 from opentelemetry import trace
-import logging
-
 from app.core.request_id import RequestIdMiddleware
-from app.core.errors import http_exception_handler, unhandled_exception_handler, integrity_exception_handler, request_validation_exception_handler
+from app.core.errors import (
+    http_exception_handler,
+    unhandled_exception_handler,
+    integrity_exception_handler,
+    request_validation_exception_handler,
+)
 from app.routers.health import router as health_router
 from app.routers.readiness import router as readiness_router
 from app.routers.odds import router as odds_router
@@ -22,9 +25,11 @@ from app.observability.tracing import setup_tracing
 from app.observability.trace_filter import TraceContextFilter
 from app.core.db import engine
 
-import os
+load_dotenv()
+
 if os.getenv("JSON_LOGS", "1") == "1":
     from app.core.logging import configure_json_logging
+
     configure_json_logging()
 
 setup_logging()
@@ -60,15 +65,19 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 app.add_exception_handler(IntegrityError, integrity_exception_handler)
 
+
 @app.get("/_auth_example", include_in_schema=False)
 def _auth_example():
     return {"hint": "Send X-API-KEY: <your_key> in headers"}
 
+
 # Test-only endpoint för att trigga unhandled exception
 if os.getenv("ENABLE_TEST_ENDPOINTS", "1") == "1":
+
     @app.get("/_boom", include_in_schema=False, tags=["system"])
     def _boom():
         raise RuntimeError("kaboom")
+
 
 @app.middleware("http")
 async def add_trace_headers(request, call_next):
@@ -76,11 +85,10 @@ async def add_trace_headers(request, call_next):
     sc = trace.get_current_span().get_span_context()
     if sc and sc.is_valid:
         resp.headers["trace-id"] = format(sc.trace_id, "032x")
-        resp.headers["span-id"]  = format(sc.span_id,  "016x")
+        resp.headers["span-id"] = format(sc.span_id, "016x")
         # Alternativ enligt W3C:
         # resp.headers["traceparent"] = f"00-{format(sc.trace_id,'032x')}-{format(sc.span_id,'016x')}-01"
     return resp
-
 
 
 app.include_router(health_router, tags=["system"])

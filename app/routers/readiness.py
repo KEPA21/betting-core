@@ -9,6 +9,7 @@ from app.schemas.errors import ErrorResponse
 
 router = APIRouter()
 
+
 @router.get(
     "/readyz",
     tags=["system"],
@@ -40,10 +41,16 @@ def readyz():
             }
 
             # Alembic revision
-            db_rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
+            db_rev = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one_or_none()
 
         expected = os.getenv("ALEMBIC_EXPECTED_REV")
-        strict = os.getenv("READYZ_STRICT_MIGRATIONS", "true").lower() in ("1", "true", "yes")
+        strict = os.getenv("READYZ_STRICT_MIGRATIONS", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
         if expected and db_rev != expected and strict:
             raise HTTPException(
@@ -51,9 +58,15 @@ def readyz():
                 detail=f"alembic_version mismatch: db={db_rev}, expected={expected}",
             )
 
-        return {"status": "ready", "db": {"status": "ok", "revision": db_rev, "expected": expected}, "counts": counts}
+        return {
+            "status": "ready",
+            "db": {"status": "ok", "revision": db_rev, "expected": expected},
+            "counts": counts,
+        }
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"db_not_ready: {e.__class__.__name__}: {e}")
+        raise HTTPException(
+            status_code=503, detail=f"db_not_ready: {e.__class__.__name__}: {e}"
+        )

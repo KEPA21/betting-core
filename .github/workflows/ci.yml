@@ -84,6 +84,14 @@ jobs:
           PGPASSWORD: betting
         run: psql -h localhost -p 5433 -U betting -d betting_core_test -v ON_ERROR_STOP=1 -f db/seed_test.sql
 
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Mypy (best effort)
+        run: |
+          pip install mypy
+          mypy app || true  # kör utan att bryta bygget initialt
+
       - name: Run tests
         run: |
           pytest -q --cov=app --cov-report=term-missing

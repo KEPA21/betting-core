@@ -47,21 +47,24 @@ redis.call('EXPIRE', key, reset)
 return {allowed, tokens, retry_after, reset}
 """
 
+
 class RateLimiter:
     def __init__(self, redis: Redis):
         self.redis = redis
         self._sha = None
-    
+
     async def _ensure_script(self):
         if not self._sha:
             self._sha = await self.redis.script_load(_LUA)
-        
+
     async def _now_ms(self) -> int:
         # Redis TIME för att undvika klock-skev på flera noder
         sec, usec = await self.redis.time()
         return sec * 1000 + math.floor(usec / 1000)
-    
-    async def allow(self, key: str, capacity: int, refill_per_sec: float, cost: int = 1):
+
+    async def allow(
+        self, key: str, capacity: int, refill_per_sec: float, cost: int = 1
+    ):
         await self._ensure_script()
         now_ms = await self._now_ms()
         try:
@@ -74,12 +77,20 @@ class RateLimiter:
             )
         return int(allowed), float(tokens_left), int(retry_after), int(reset)
 
+
 def _headers(resp: Response, limit: int, remaining: int, reset: int):
-    resp.headers["X-RateLimit-Limit"] = str(limit) 
-    resp.headers["X-RateLimit-Remaining"] = str(max(remaining, 0)) 
+    resp.headers["X-RateLimit-Limit"] = str(limit)
+    resp.headers["X-RateLimit-Remaining"] = str(max(remaining, 0))
     resp.headers["X-RateLimit-Reset"] = str(max(reset, 0))
 
-def rate_limit_dependency(bucket_id: str, capacity: int, refill_per_sec: float, cost_getter: Optional[Callable[[Request], int]] = None, key_from_api_key: bool = True) -> Callable[[Request, Response], None]:
+
+def rate_limit_dependency(
+    bucket_id: str,
+    capacity: int,
+    refill_per_sec: float,
+    cost_getter: Optional[Callable[[Request], int]] = None,
+    key_from_api_key: bool = True,
+) -> Callable[[Request, Response], None]:
     """
     Skapar en FastAPI-dependency som applicerar token-bucket.
     - bucket_id: t.ex. "odds_post" eller "predictions_post"
@@ -101,12 +112,9 @@ def rate_limit_dependency(bucket_id: str, capacity: int, refill_per_sec: float, 
                 cost = max(1, int(cost_getter(request)))
             except Exception:
                 cost = 1
-        
+
         allowed, tokens_left, retry_after, reset = await limiter.allow(
-            key=key,
-            capacity=capacity,
-            refill_per_sec=refill_per_sec,
-            cost=cost
+            key=key, capacity=capacity, refill_per_sec=refill_per_sec, cost=cost
         )
         _headers(response, capacity, math.floor(tokens_left), reset)
 
@@ -120,15 +128,33 @@ def rate_limit_dependency(bucket_id: str, capacity: int, refill_per_sec: float, 
                     "X-RateLimit-Limit": str(capacity),
                     "X-RateLimit-Remaining": "0",
                     "X-RateLimit-Reset": str(max(reset, 0)),
-                }
+                },
             )
+
     return _dep
+
 
 async def noop_dependency(request: Request, response: Response):
     return None
 
-def per_key_limiter(bucket_id: str, capacity: int, refill_per_sec: float, cost_getter: Optional[Callable[[Request], int]] = None):
-    return rate_limit_dependency(bucket_id, capacity, refill_per_sec, cost_getter,key_from_api_key=True)
 
-def global_limiter(bucket_id: str, capacity: int, refill_per_sec: float, cost_getter: Optional[Callable[[Request], int]] = None):
-    return rate_limit_dependency(bucket_id, capacity, refill_per_sec, cost_getter, key_from_api_key=False)
+def per_key_limiter(
+    bucket_id: str,
+    capacity: int,
+    refill_per_sec: float,
+    cost_getter: Optional[Callable[[Request], int]] = None,
+):
+    return rate_limit_dependency(
+        bucket_id, capacity, refill_per_sec, cost_getter, key_from_api_key=True
+    )
+
+
+def global_limiter(
+    bucket_id: str,
+    capacity: int,
+    refill_per_sec: float,
+    cost_getter: Optional[Callable[[Request], int]] = None,
+):
+    return rate_limit_dependency(
+        bucket_id, capacity, refill_per_sec, cost_getter, key_from_api_key=False
+    )

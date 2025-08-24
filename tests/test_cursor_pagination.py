@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import List, Tuple
+from typing import List
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -14,7 +14,7 @@ READER = {"X-API-Key": "reader1"}
 # Befintliga seedade UUID:er i din DB/migrations
 BOOKMAKER_ID = "024c6a47-1a14-4549-935f-31e22e747670"
 SELECTION_ID = "bea8671c-e889-4e3d-91d3-b407bc186408"
-MODEL_ID     = "5c53bd4d-088d-48ca-8530-6d517a6597f9"
+MODEL_ID = "5c53bd4d-088d-48ca-8530-6d517a6597f9"
 
 
 def _post_odds_batch(match_id: str, stamps: List[str]) -> None:
@@ -58,7 +58,9 @@ def _post_predictions_batch(match_id: str, stamps: List[str]) -> None:
     assert r.status_code == 200, r.text
 
 
-def _fetch_page_odds(match_id: str, limit: int, cursor: str | None = None, offset: int | None = None):
+def _fetch_page_odds(
+    match_id: str, limit: int, cursor: str | None = None, offset: int | None = None
+):
     params = {"match_id": match_id, "limit": str(limit)}
     if cursor is not None:
         params["cursor"] = cursor
@@ -69,7 +71,9 @@ def _fetch_page_odds(match_id: str, limit: int, cursor: str | None = None, offse
     return r.json()
 
 
-def _fetch_page_predictions(match_id: str, limit: int, cursor: str | None = None, offset: int | None = None):
+def _fetch_page_predictions(
+    match_id: str, limit: int, cursor: str | None = None, offset: int | None = None
+):
     params = {"match_id": match_id, "limit": str(limit)}
     if cursor is not None:
         params["cursor"] = cursor

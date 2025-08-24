@@ -1,7 +1,10 @@
-import time, json, logging
+import time
+import json
+import logging
 from starlette.middleware.base import BaseHTTPMiddleware
 
 log = logging.getLogger("access")
+
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -14,7 +17,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             return response
         finally:
             latency_ms = int((time.time() - start) * 1000)
-            rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID")
+            rid = getattr(request.state, "request_id", None) or request.headers.get(
+                "X-Request-ID"
+            )
             entry = {
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 "level": "INFO",

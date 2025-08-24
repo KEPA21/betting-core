@@ -1,5 +1,7 @@
-#!/usr/bin/env python3
-import os, sys, json
+import os
+import sys
+import json
+
 # lägg till projektroten i import-sökvägen
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 

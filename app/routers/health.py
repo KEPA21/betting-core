@@ -5,6 +5,7 @@ from app.core.docs import DEFAULT_ERROR_RESPONSES
 
 router = APIRouter()
 
+
 @router.get(
     "/healthz",
     tags=["system"],
@@ -17,4 +18,3 @@ router = APIRouter()
 )
 def healthz():
     return {"status": "ok"}
-
