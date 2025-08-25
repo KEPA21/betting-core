@@ -1,9 +1,9 @@
-import os
 from functools import lru_cache
 from redis.asyncio import Redis
 from app.core.settings import settings
 
 _redis: Redis | None = None
+
 
 @lru_cache
 def get_redis() -> Redis:

@@ -1,15 +1,15 @@
-from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from sqlalchemy import text as _text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.models.predictions import Prediction
 
+
 def _predictions_base_query(
-        match_id: str | None,
-        model_id: str | None,
-        version: str | None, 
-        selection_id: str | None,
+    match_id: str | None,
+    model_id: str | None,
+    version: str | None,
+    selection_id: str | None,
 ):
     stmt = select(Prediction)
     if match_id:
@@ -21,6 +21,7 @@ def _predictions_base_query(
     if selection_id:
         stmt = stmt.where(Prediction.selection_id == selection_id)
     return stmt
+
 
 def list_predictions_page(
     db,
@@ -37,14 +38,19 @@ def list_predictions_page(
         select(func.count()).select_from(base.order_by(None).subquery())
     ).scalar_one()
 
-    page_stmt = base.order_by(Prediction.predicted_at.desc(), Prediction.prediction_id.asc()) \
-                    .limit(limit).offset(offset)
+    page_stmt = (
+        base.order_by(Prediction.predicted_at.desc(), Prediction.prediction_id.asc())
+        .limit(limit)
+        .offset(offset)
+    )
     rows = db.execute(page_stmt).scalars().all()
 
     next_offset = (offset + limit) if (offset + limit) < total else None
     return rows, total, next_offset
 
+
 UNIQUE_COLS = ["match_id", "model_id", "version", "selection_id"]
+
 
 def bulk_upsert_predictions(db: Session, rows: list[dict]) -> dict:
     if not rows:
@@ -58,15 +64,16 @@ def bulk_upsert_predictions(db: Session, rows: list[dict]) -> dict:
         if isinstance(pa, str):
             # defensivt: om någon råkar skicka str
             from datetime import datetime
+
             pa = datetime.fromisoformat(pa.replace("Z", "+00:00"))
         item = {
-            "match_id":     r["match_id"],
-            "model_id":     r["model_id"],
-            "version":      r["version"],
+            "match_id": r["match_id"],
+            "model_id": r["model_id"],
+            "version": r["version"],
             "selection_id": r["selection_id"],
-            "probability":  r.get("probability"),
-            "odds_fair":    r.get("odds_fair"),
-            "features":     r.get("features"),
+            "probability": r.get("probability"),
+            "odds_fair": r.get("odds_fair"),
+            "features": r.get("features"),
             "predicted_at": pa or datetime.utcnow(),
         }
         prev = by_key.get(key)
@@ -86,9 +93,9 @@ def bulk_upsert_predictions(db: Session, rows: list[dict]) -> dict:
             Prediction.selection_id,
         ],
         set_={
-            "probability":  ins.excluded.probability,
-            "odds_fair":    ins.excluded.odds_fair,
-            "features":     ins.excluded.features,
+            "probability": ins.excluded.probability,
+            "odds_fair": ins.excluded.odds_fair,
+            "features": ins.excluded.features,
             "predicted_at": ins.excluded.predicted_at,
         },
     ).returning(_text("(xmax = 0) AS inserted"))

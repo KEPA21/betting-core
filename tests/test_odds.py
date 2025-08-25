@@ -5,11 +5,13 @@ MATCH_ID = "m1"
 BOOKMAKER_ID = "024c6a47-1a14-4549-935f-31e22e747670"
 SELECTION_ID = "bea8671c-e889-4e3d-91d3-b407bc186408"
 
+
 def test_get_odds_requires_auth(client):
     r = client.get("/odds", params={"match_id": MATCH_ID})
     assert r.status_code == 401
     body = r.json()
     assert body["code"] == "unauthorized"
+
 
 def test_post_odds_reader_forbidden(client, reader_headers):
     payload = {
@@ -28,6 +30,7 @@ def test_post_odds_reader_forbidden(client, reader_headers):
     body = r.json()
     assert body["code"] == "forbidden"
 
+
 def test_post_odds_validation_422(client, writer_headers):
     payload = {
         "items": [
@@ -45,7 +48,8 @@ def test_post_odds_validation_422(client, writer_headers):
     body = r.json()
     assert body["code"] == "validation_error"
     assert body["traceId"]
- 
+
+
 def test_post_odds_fk_404(client, writer_headers):
     payload = {
         "items": [
@@ -62,7 +66,11 @@ def test_post_odds_fk_404(client, writer_headers):
     assert r.status_code == 404
     body = r.json()
     assert body["code"] == "not_found"
-    assert "unknown bookmaker_id" in body["message"] or "unknown selection_id" in body["message"]
+    assert (
+        "unknown bookmaker_id" in body["message"]
+        or "unknown selection_id" in body["message"]
+    )
+
 
 def test_post_odds_upsert_and_cursor_paging(client, writer_headers, reader_headers):
     captured_at = datetime(2030, 1, 3, 0, 0, 0, tzinfo=timezone.utc).isoformat()
@@ -87,7 +95,9 @@ def test_post_odds_upsert_and_cursor_paging(client, writer_headers, reader_heade
     assert body["inserted"] + body["updated"] == 1
 
     # 2) GET med limit=1 ska returnera items + next_cursor
-    r = client.get("/odds", headers=reader_headers, params={"match_id": MATCH_ID, "limit": 1})
+    r = client.get(
+        "/odds", headers=reader_headers, params={"match_id": MATCH_ID, "limit": 1}
+    )
     assert r.status_code == 200
     page1 = r.json()
     assert "items" in page1 and "total" in page1
@@ -98,7 +108,7 @@ def test_post_odds_upsert_and_cursor_paging(client, writer_headers, reader_heade
         r2 = client.get(
             "/odds",
             headers=reader_headers,
-            params={"match_id": MATCH_ID, "limit": 1, "cursor": page1["next_cursor"]}
+            params={"match_id": MATCH_ID, "limit": 1, "cursor": page1["next_cursor"]},
         )
         assert r2.status_code == 200
         page2 = r2.json()
@@ -106,12 +116,9 @@ def test_post_odds_upsert_and_cursor_paging(client, writer_headers, reader_heade
     else:
         r2 = client.get(
             "/odds",
-            headers= reader_headers,
-            params={"match_id": MATCH_ID, "limit": 1, "offset": page1["next_offset"]}
+            headers=reader_headers,
+            params={"match_id": MATCH_ID, "limit": 1, "offset": page1["next_offset"]},
         )
         assert r2.status_code == 200
         page2 = r2.json()
         assert "items" in page2
-        
-
-

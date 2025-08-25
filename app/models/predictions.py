@@ -5,6 +5,7 @@ from sqlalchemy import String, Numeric, TIMESTAMP, ForeignKey, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from .base import Base
 
+
 class Prediction(Base):
     __tablename__ = "predictions"
 
@@ -19,8 +20,8 @@ class Prediction(Base):
     selection_id: Mapped[str] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.selections.selection_id"), nullable=False
     )
-    probability: Mapped[float] = mapped_column(Numeric(7,6), nullable=False)
-    odds_fair: Mapped[float | None] = mapped_column(Numeric(10,4))
+    probability: Mapped[float] = mapped_column(Numeric(7, 6), nullable=False)
+    odds_fair: Mapped[float | None] = mapped_column(Numeric(10, 4))
     features: Mapped[dict | None] = mapped_column(JSONB)
     predicted_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False

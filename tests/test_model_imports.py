@@ -4,6 +4,7 @@ def test_import_models_smoke():
     from app.models.odds import Odds
     from app.models.predictions import Prediction
     from app.models.bets import Bet
+
     # Rör vid något fält så modulkoden garanterat exekveras
     assert Bookmaker.__tablename__ == "bookmakers"
     assert hasattr(Selection, "selection_id")

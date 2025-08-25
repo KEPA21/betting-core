@@ -1,9 +1,11 @@
-import logging, json, sys
+import logging
+import json
+import sys
 from contextvars import ContextVar
-from time import time
 from app.observability.trace_filter import TraceContextFilter
 
 request_id_var = ContextVar("request_id", default="-")
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -22,7 +24,8 @@ class JsonFormatter(logging.Formatter):
             payload["exc_type"] = record.ext_info[0].__name__
         return json.dumps(payload, ensure_ascii=False)
 
-def setup_logging(level:str = "INFO"):
+
+def setup_logging(level: str = "INFO"):
     root = logging.getLogger()
     root.addFilter(TraceContextFilter())
     root.handlers[:] = []
@@ -31,4 +34,3 @@ def setup_logging(level:str = "INFO"):
     root.addHandler(h)
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
     logging.getLogger("uvicorn.access").addFilter(TraceContextFilter())
-    

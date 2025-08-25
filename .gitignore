@@ -24,3 +24,6 @@ build/
 
 # Docker
 docker-data/
+
+# Open API
+openapi.json

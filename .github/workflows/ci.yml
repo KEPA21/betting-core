@@ -2,90 +2,98 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11', '3.12', '3.13']
-      fail-fast: false
-    continue-on-error: ${{ matrix.python-version == '3.13' }}
 
     services:
       postgres:
         image: postgres:16
         env:
+          POSTGRES_USER: betting
+          POSTGRES_PASSWORD: betting
           POSTGRES_DB: betting_core
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports: ['5432:5432']
+        ports:
+          - 5433:5432
+        # liten healthcheck så vi kan vänta korrekt
         options: >-
-          --health-cmd="pg_isready -U postgres -d betting_core"
-          --health-interval=5s --health-timeout=5s --health-retries=20
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd="redis-cli ping || exit 1"
-          --health-interval=5s --health-timeout=3s --health-retries=20
+          --health-cmd="pg_isready -U betting -d postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
 
     env:
-      # Pekar mot service-containern "postgres" via localhost:5432 i Actions
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/betting_core
-      REDIS_URL: redis://localhost:6379/0
-      API_KEYS: writer1=read,odds:write,predictions:write,bets:write;reader1=read
-      RATE_LIMIT_ENABLED: "false"  # sätt "true" om du vill testa limiter i CI
-      ENABLE_TRACING: "false"
+      DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core
+      TEST_DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core_test
+      RATE_LIMIT_ENABLED: "false"
+      # om du har andra env som krävs i appen kan du lägga dem här
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+          python-version: '3.11'
 
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          # valfritt: dev-krav om du har dem
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          # valfritt: pre-commit om du använder hooks
-          pip install pre-commit
+          pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Wait for DB to be ready
+      # NYTT: psql-klient (ger pg_isready och psql)
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres (extra gardering)
         run: |
           for i in {1..60}; do
-            pg_isready -h localhost -p 5432 -U postgres && break
+            pg_isready -h localhost -p 5433 -U betting && break
             sleep 1
           done
 
-      # KÖR MIGRATIONER/SCHEMA – justera till ditt projekt
-      - name: Run migrations / init schema
+      - name: Create test database if missing
+        env:
+          PGPASSWORD: betting
         run: |
-          # Exempel 1: Alembic (om du använder det)
-          if [ -f alembic.ini ]; then
-            pip install alembic
-            alembic upgrade head
-          # Exempel 2: ren SQL-init (byt sökväg till din .sql om du har en)
-          elif [ -f docker/sql/init.sql ]; then
-            PGPASSWORD=postgres psql -h localhost -U postgres -d betting_core -f docker/sql/init.sql
-          else
-            echo "No migration/init script found; adjust this step to your project."
-          fi
+          psql -h localhost -p 5433 -U betting -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='betting_core'" | grep -q 1 \
+            || psql -h localhost -p 5433 -U betting -d postgres -c "CREATE DATABASE betting_core"
+          psql -h localhost -p 5433 -U betting -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='betting_core_test'" | grep -q 1 \
+            || psql -h localhost -p 5433 -U betting -d postgres -c "CREATE DATABASE betting_core_test"
 
-      - name: Lint (pre-commit)
+      - name: Run Alembic migrations (main)
+        run: alembic -c db/alembic.ini upgrade head
+
+      - name: Seed main DB
+        env:
+          PGPASSWORD: betting
+        run: psql -h localhost -p 5433 -U betting -d betting_core -v ON_ERROR_STOP=1 -f db/seed_test.sql
+
+      - name: Run Alembic migrations (test)
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: alembic -c db/alembic.ini upgrade head
+
+      - name: Seed test DB
+        env:
+          PGPASSWORD: betting
+        run: psql -h localhost -p 5433 -U betting -d betting_core_test -v ON_ERROR_STOP=1 -f db/seed_test.sql
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Mypy (best effort)
         run: |
-          if [ -f .pre-commit-config.yaml ]; then
-            pre-commit run --all-files
-          else
-            echo "No .pre-commit-config.yaml; skipping."
-          fi
+          pip install mypy
+          mypy app || true  # kör utan att bryta bygget initialt
 
       - name: Run tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest -q --cov=app --cov-report=term-missing

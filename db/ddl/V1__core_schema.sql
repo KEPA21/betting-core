@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS core.bookmakers (
 CREATE TABLE IF NOT EXISTS core.markets (
     market_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     code TEXT NOT NULL UNIQUE,
-    description TEXT, 
+    description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -57,8 +57,8 @@ CREATE TABLE IF NOT EXISTS core.odds (
     price NUMERIC(10,4) NOT NULL CHECK (price > 1.0),
     probability NUMERIC(7,6) CHECK (probability >= 0 AND probability <= 1),
     captured_at TIMESTAMPTZ NOT NULL,
-    source TEXT, 
-    checksum TEXT, 
+    source TEXT,
+    checksum TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -88,7 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_predictions_model ON core.predictions(model_id);
 CREATE TABLE IF NOT EXISTS core.bets (
     bet_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     external_id TEXT,
-    user_ref TEXT, 
+    user_ref TEXT,
     match_id TEXT NOT NULL,
     bookmaker_id UUID NOT NULL REFERENCES core.bookmakers(bookmaker_id),
     selection_id UUID NOT NULL REFERENCES core.selections(selection_id),

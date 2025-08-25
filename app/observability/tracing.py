@@ -8,12 +8,14 @@ from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
     ConsoleSpanExporter,
 )
+
 try:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 except Exception:
     OTLPSpanExporter = None
 
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
 
 def setup_tracing(app, engine):
     if os.getenv("ENABLE_TRACING", "false").lower() not in ("1", "true", "yes"):
@@ -40,10 +42,12 @@ def setup_tracing(app, engine):
     # Preferera FastAPI-instrumentering (namnger routes), fallback till ASGI-middleware
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
         FastAPIInstrumentor().instrument_app(app)
     except Exception:
         try:
             from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
             app.add_middleware(OpenTelemetryMiddleware)
         except Exception:
             pass
