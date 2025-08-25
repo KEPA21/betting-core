@@ -93,5 +93,7 @@ jobs:
           mypy app || true  # kör utan att bryta bygget initialt
 
       - name: Run tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest -q --cov=app --cov-report=term-missing
