@@ -31,6 +31,8 @@ log = logging.getLogger("app.errors")
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     trace_id = getattr(request.state, "request_id", get_request_id())
+
+    # utökad kodkarta inkl. 503
     code_map = {
         400: "bad_request",
         401: "unauthorized",
@@ -38,14 +40,56 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         404: "not_found",
         405: "method_not_allowed",
         409: "conflict",
+        422: "validation_error",
         429: "rate_limited",
+        503: "service_unavailable",
     }
-    code = code_map.get(exc.status_code, f"http_{exc.status_code}")
-    msg = exc.detail if isinstance(exc.detail, str) else "HTTP error"
-    payload = ErrorResponse(code=code, message=msg, traceId=trace_id).model_dump()
-    log.warning(
-        "%d %s traceId=%s path=%s", exc.status_code, code, trace_id, request.url.path
-    )
+
+    def defaults_for(status: int):
+        code = code_map.get(status, f"http_{status}")
+        msg = (
+            "HTTP error"
+            if status not in (400, 401, 403, 404, 409, 422, 429, 503)
+            else {
+                400: "Bad request",
+                401: "Unauthorized",
+                403: "Forbidden",
+                404: "Not found",
+                409: "Conflict",
+                422: "Validation error",
+                429: "Too many requests",
+                503: "Service unavailable",
+            }[status]
+        )
+        return code, msg
+
+    # Om detail redan är en dict: använd dess värden och fyll bara i defaults om saknas
+    if isinstance(exc.detail, dict):
+        def_code, def_msg = defaults_for(exc.status_code)
+        code = exc.detail.get("code") or def_code
+        message = exc.detail.get("message") or def_msg
+        field_errors = (
+            exc.detail.get("fieldErrors")
+            or exc.detail.get("field_errors")
+            or exc.detail.get("errors")
+        )
+        payload = {
+            "code": code,
+            "message": message,
+            "fieldErrors": field_errors,
+            "traceId": trace_id,
+        }
+        return JSONResponse(status_code=exc.status_code, content=payload)
+
+    # Annars: str/None → bygg standard
+    def_code, def_msg = defaults_for(exc.status_code)
+    message = exc.detail if isinstance(exc.detail, str) and exc.detail else def_msg
+    payload = {
+        "code": def_code,
+        "message": message,
+        "fieldErrors": None,
+        "traceId": trace_id,
+    }
     return JSONResponse(status_code=exc.status_code, content=payload)
 
 
