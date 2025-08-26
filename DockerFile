@@ -1,5 +1,5 @@
 # === Builder (Chainguard) ===
-FROM cgr.dev/chainguard/python:3.11-dev AS builder
+FROM cgr.dev/chainguard/python:latest-dev AS builder
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
