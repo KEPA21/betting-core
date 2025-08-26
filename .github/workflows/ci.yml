@@ -1,12 +1,17 @@
 name: CI
 
 on:
-  push:
   pull_request:
+  push:
 
 jobs:
   test:
+    name: Lint & Test (Py${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
 
     services:
       postgres:
@@ -17,7 +22,6 @@ jobs:
           POSTGRES_DB: betting_core
         ports:
           - 5433:5432
-        # liten healthcheck så vi kan vänta korrekt
         options: >-
           --health-cmd="pg_isready -U betting -d postgres"
           --health-interval=5s
@@ -25,51 +29,60 @@ jobs:
           --health-retries=20
 
     env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: .
       DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core
       TEST_DATABASE_URL: postgresql+psycopg://betting:betting@localhost:5433/betting_core_test
       RATE_LIMIT_ENABLED: "false"
-      # om du har andra env som krävs i appen kan du lägga dem här
+      ENABLE_TRACING: "false"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ matrix.python }}-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ matrix.python }}-
 
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements.txt
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
-      # NYTT: psql-klient (ger pg_isready och psql)
       - name: Install psql client
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Wait for Postgres (extra gardering)
+      - name: Wait for Postgres
         run: |
           for i in {1..60}; do
             pg_isready -h localhost -p 5433 -U betting && break
             sleep 1
           done
 
-      - name: Create test database if missing
+      - name: Create test database
         env:
           PGPASSWORD: betting
         run: |
-          psql -h localhost -p 5433 -U betting -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='betting_core'" | grep -q 1 \
-            || psql -h localhost -p 5433 -U betting -d postgres -c "CREATE DATABASE betting_core"
           psql -h localhost -p 5433 -U betting -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='betting_core_test'" | grep -q 1 \
             || psql -h localhost -p 5433 -U betting -d postgres -c "CREATE DATABASE betting_core_test"
 
       - name: Run Alembic migrations (main)
         run: alembic -c db/alembic.ini upgrade head
 
-      - name: Seed main DB
+      - name: Seed main DB (if present)
+        if: hashFiles('db/seed_test.sql') != ''
         env:
           PGPASSWORD: betting
         run: psql -h localhost -p 5433 -U betting -d betting_core -v ON_ERROR_STOP=1 -f db/seed_test.sql
@@ -79,21 +92,85 @@ jobs:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: alembic -c db/alembic.ini upgrade head
 
-      - name: Seed test DB
+      - name: Seed test DB (if present)
+        if: hashFiles('db/seed_test.sql') != ''
         env:
           PGPASSWORD: betting
         run: psql -h localhost -p 5433 -U betting -d betting_core_test -v ON_ERROR_STOP=1 -f db/seed_test.sql
 
-      - name: Ruff lint
+      - name: Migrations check (current == head & reversible)
+        run: |
+          HEAD=$(alembic -c db/alembic.ini heads | tail -n1 | awk '{print $1}')
+          CURR=$(alembic -c db/alembic.ini current | tail -n1 | awk '{print $1}')
+          echo "HEAD=$HEAD CURR=$CURR"
+          test "$HEAD" = "$CURR"
+          alembic -c db/alembic.ini downgrade -1
+          alembic -c db/alembic.ini upgrade head
+
+      - name: Lint (ruff)
         run: ruff check .
 
-      - name: Mypy (best effort)
+      - name: Type-check (best effort)
         run: |
           pip install mypy
-          mypy app || true  # kör utan att bryta bygget initialt
+          mypy app || true
 
-      - name: Run tests
-        env:
-          PYTHONPATH: ${{ github.workspace }}
+      - name: Tests
+        run: pytest -q --cov=app --cov-report=term-missing
+
+      - name: Upload coverage (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python }}
+          path: ./.coverage
+          if-no-files-found: ignore
+
+  build-image:
+    name: Build Docker image (no push on PR)
+    runs-on: ubuntu-latest
+    needs: [test]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Show repo root
         run: |
-          pytest -q --cov=app --cov-report=term-missing
+          pwd
+          ls -la
+
+      # Bygger och LADDAR in i Docker Engine så Trivy hittar imagen
+      - name: Build (load for scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./DockerFile
+          load: true
+          tags: |
+            local/betting-core:ci-scan
+            ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Trivy scan (fail on CRITICAL only, ignore unfixed)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: local/betting-core:ci-scan
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          format: 'table'
