@@ -157,3 +157,12 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Trivy scan (fail on CRITICAL only, ignore unfixed)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: local/betting-core:ci-scan
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          format: 'table'
