@@ -134,11 +134,6 @@ jobs:
       contents: read
     steps:
 
-      - name: Show repo root
-        run: |
-          pwd
-          ls -la
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -154,6 +149,10 @@ jobs:
             type=sha
             type=ref,event=branch
             type=ref,event=pr
+      - name: Show repo root
+        run: |
+          pwd
+          ls -la
 
       - name: Build (no push)
         uses: docker/build-push-action@v6
