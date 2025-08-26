@@ -133,6 +133,12 @@ jobs:
     permissions:
       contents: read
     steps:
+
+      - name: Show repo root
+        run: |
+          pwd
+          ls -la
+
       - name: Checkout
         uses: actions/checkout@v4
 
