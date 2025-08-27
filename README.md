@@ -9,3 +9,4 @@ cp .env.example .env   # fyll med lokala värden
 uvicorn app.main:app --reload
 
 ![CI](https://github.com/KEPA21/betting-core/actions/workflows/ci.yml/badge.svg?branch=main)
+![CI](https://github.com/KEPA21/betting-core/actions/workflows/ci.yml/badge.svg)
