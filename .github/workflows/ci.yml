@@ -186,6 +186,10 @@ jobs:
       contents: read
       packages: write  # krävs för push till GHCR
 
+    concurrency:
+      group: ci-${{ github.ref }}-publish
+      cancel-in-progress: true
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -211,7 +215,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             # latest på main
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             # sha-tag på alla pushes
             type=sha
             # använd taggnamnet på taggade releaser (t.ex. v1.2.3)
@@ -226,3 +230,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
