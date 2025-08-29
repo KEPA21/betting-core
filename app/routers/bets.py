@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Response
+# app/routers/bets.py
+from __future__ import annotations
 from typing import Optional, Literal
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text, bindparam
-from uuid import UUID
 
 from app.core.db import get_db
 from app.core.security import require_scopes
 from app.core.docs import DEFAULT_ERROR_RESPONSES
 from app.schemas.bets import BetIn, BetCreateOut
 from app.schemas.pages import BetsPage
-from app.crud.bets import create_bet, list_bets_page
-
+from app.crud.bets import list_bets_page, insert_bet_idempotent
 
 router = APIRouter()
 
@@ -47,24 +49,27 @@ def _ensure_fk_exists_for_bets(db: Session, rows: list[dict]) -> None:
 @router.post(
     "/bets",
     tags=["bets"],
-    summary="Skapa bet (idempotent)",
+    summary="Skapa bet (idempotent via idempotency_key)",
     response_model=BetCreateOut,
     responses={
         **DEFAULT_ERROR_RESPONSES,
-        201: {"description": "OK"},
+        201: {"description": "Created"},
         200: {"description": "Idempotent duplicate"},
     },
+    status_code=201,
     dependencies=[Depends(require_scopes("bets:write"))],
 )
-def post_bet(payload: BetIn, db: Session = Depends(get_db), response: Response = None):
-    row = payload.model_dump()
-    _ensure_fk_exists_for_bets(db, [row])
-    result = create_bet(db, row)
-    if response is not None:
-        response.status_code = (
-            status.HTTP_201_CREATED if result.get("created") else status.HTTP_200_OK
-        )
-    return result
+def post_bet(
+    payload: BetIn, response: Response, db: Session = Depends(get_db)
+) -> BetCreateOut:
+    created, bet_id = insert_bet_idempotent(db, payload.model_dump())
+    # 200 om det var en idempotent replay, annars 201
+    if not created:
+        response.status_code = 200
+        response.headers["x-idempotent-replayed"] = "true"
+    else:
+        response.headers["x-idempotent-replayed"] = "false"
+    return BetCreateOut(created=created, bet_id=bet_id)
 
 
 @router.get(
@@ -84,7 +89,7 @@ def get_bets(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    rows, total, next_offset = list_bets_page(db, user_ref, status, limit, offset)
+    rows, total, next_offset = list_bets_page(db, user_ref, bet_status, limit, offset)
     return {
         "items": [
             {
@@ -96,7 +101,7 @@ def get_bets(
                 "selection_id": str(r.selection_id),
                 "stake": float(r.stake),
                 "price": float(r.price),
-                "placed_at": r.placed_at.isoformat(),
+                "placed_at": r.placed_at.isoformat(),  # låt FastAPI/pydantic serialisera datetime
                 "status": r.status,
                 "result": r.result,
                 "payout": float(r.payout) if r.payout is not None else None,
