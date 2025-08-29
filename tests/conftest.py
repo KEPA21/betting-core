@@ -1,12 +1,21 @@
 import os
 import sys
-from pathlib import Path
+import jwt
+import datetime as dt
 import pytest
+from pathlib import Path
 from fastapi.testclient import TestClient
 
 # --- Lägg repo-roten på sys.path ---
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+os.environ.setdefault("AUTH_MODE", "both")
+os.environ.setdefault("JWT_ALG", "HS256")
+os.environ.setdefault("JWT_ISSUER", "betting-core")
+os.environ.setdefault("JWT_AUDIENCE", "betting-clients")
+os.environ.setdefault("JWT_SECRETS", "v1:testsecret1,v2:testsecret2")
+os.environ.setdefault("JWT_ACCEPTED_KIDS", "v1,v2")
 
 # --- Sätt test-vänliga envs INNAN appen importeras ---
 os.environ.setdefault(
@@ -36,3 +45,21 @@ def writer_headers():
 @pytest.fixture(scope="session")
 def reader_headers():
     return {"X-API-Key": "reader1"}
+
+
+@pytest.fixture()
+def make_jwt():
+    def _make(scopes, kid="v1", sub="test-client"):
+        now = dt.datetime.now(dt.timezone.utc)
+        payload = {
+            "iss": "betting-core",
+            "aud": "betting-clients",
+            "sub": "sub",
+            "scopes": scopes,
+            "iat": int(now.timestamp()),
+            "exp": int((now + dt.timedelta(hours=1)).timestamp()),
+        }
+        key = {"v1": "testsecret1", "v2": "testsecret2"}[kid]
+        return jwt.encode(payload, key, algorithm="HS256", headers={"kid": kid})
+
+    return _make

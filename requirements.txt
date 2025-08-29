@@ -14,3 +14,4 @@ opentelemetry-instrumentation-asgi~=0.57b0
 opentelemetry-instrumentation-sqlalchemy~=0.57b0
 opentelemetry-instrumentation-fastapi~=0.57b0
 opentelemetry-exporter-otlp-proto-http~=1.36
+PyJWT[crypto]==2.9.0
