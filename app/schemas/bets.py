@@ -1,5 +1,6 @@
+from __future__ import annotations
 from pydantic import Field
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 from uuid import UUID
 from .base import APISchema
@@ -22,8 +23,22 @@ class BetCreateOut(APISchema):
     bet_id: Optional[UUID] = None
 
 
-class BetsList(APISchema):
-    items: List[BetIn]
+# (Valfritt men bra för tydlighet i list-svar)
+class BetOut(APISchema):
+    bet_id: UUID
+    external_id: Optional[str] = None
+    user_ref: Optional[str] = None
+    match_id: str
+    bookmaker_id: UUID
+    selection_id: UUID
+    stake: float
+    price: float
+    # Om din BetsPage (i pages.py) definierar placed_at som str -> byt här till str
+    placed_at: datetime
+    status: str
+    result: Optional[str] = None
+    payout: Optional[float] = None
+    idempotency_key: Optional[str] = None
 
 
 BetIn.model_config = {

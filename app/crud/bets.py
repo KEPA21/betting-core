@@ -1,4 +1,5 @@
-from typing import Optional, Dict, Any
+from __future__ import annotations
+from typing import Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import select, text, func
@@ -6,9 +7,9 @@ from app.models.bets import Bet
 
 
 def list_bets_page(
-    db,
-    user_ref: str | None,
-    status: str | None,
+    db: Session,
+    user_ref: Optional[str],
+    status: Optional[str],
     limit: int = 100,
     offset: int = 0,
 ):
@@ -16,7 +17,7 @@ def list_bets_page(
     if user_ref:
         base = base.where(Bet.user_ref == user_ref)
     if status:
-        base = base.where(Bet.stats == status)
+        base = base.where(Bet.status == status)  # <-- rätt kolumn
 
     total = db.execute(
         select(func.count()).select_from(base.order_by(None).subquery())
@@ -117,3 +118,53 @@ def list_bets(
         q = q.where(Bet.status == status)
     q = q.order_by(Bet.placed_at.desc()).limit(limit).offset(offset)
     return db.execute(q).scalars().all()
+
+
+def insert_bet_idempotent(db: Session, data: dict) -> Tuple[bool, Optional[str]]:
+    """
+    Skapar en bet idempotent på idempotency_key.
+    Returnerar (created, bet_id).
+    """
+    params = {
+        "external_id": data.get("external_id"),
+        "user_ref": data.get("user_ref"),
+        "match_id": data["match_id"],
+        "bookmaker_id": data["bookmaker_id"],  # uuid funkar direkt
+        "selection_id": data["selection_id"],  # uuid funkar direkt
+        "stake": data["stake"],
+        "price": data["price"],
+        "placed_at": data["placed_at"],
+        "status": "open",
+        "idempotency_key": data.get("idempotency_key"),
+    }
+
+    stmt = text(
+        """
+        WITH ins AS (
+            INSERT INTO core.bets (
+                external_id, user_ref, match_id, bookmaker_id, selection_id,
+                stake, price, placed_at, status, idempotency_key
+            )
+            VALUES (
+                :external_id, :user_ref, :match_id, :bookmaker_id, :selection_id,
+                :stake, :price, :placed_at, :status, :idempotency_key
+            )
+            ON CONFLICT (idempotency_key) DO NOTHING
+            RETURNING bet_id
+        )
+        SELECT
+            COALESCE(
+                (SELECT bet_id FROM ins),
+                (SELECT bet_id FROM core.bets WHERE idempotency_key = :idempotency_key LIMIT 1)
+            ) AS bet_id,
+            EXISTS(SELECT 1 FROM ins) AS inserted
+    """
+    )
+
+    row = db.execute(stmt, params).mappings().first()
+    db.commit()
+
+    if not row or not row["bet_id"]:
+        return False, None
+
+    return bool(row["inserted"]), str(row["bet_id"])
