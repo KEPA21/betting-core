@@ -1,61 +1,172 @@
+# app/core/security.py
 from __future__ import annotations
-from typing import Callable, Dict, Set
-from fastapi import HTTPException, status, Security, Request
-from fastapi.security.api_key import APIKeyHeader
-from app.core.settings import settings
+
+import os
+from typing import Optional, Iterable, Set, Dict, Any
+
+from fastapi import Depends, Header, HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import jwt
+
+# ---- Konfig från env ----
+AUTH_MODE = os.getenv("AUTH_MODE", "both").lower()  # "api_key" | "jwt" | "both"
+
+JWT_ALG = os.getenv("JWT_ALG", "HS256")
+JWT_ISS = os.getenv("JWT_ISSUER", "betting-core")
+JWT_AUD = os.getenv("JWT_AUDIENCE", "betting-clients")
+JWT_SECRETS_RAW = os.getenv("JWT_SECRETS", "")  # ex: "v1:testsecret1,v2:testsecret2"
+JWT_ACCEPTED_KIDS_RAW = os.getenv("JWT_ACCEPTED_KIDS", "")  # ex: "v1,v2"
+
+HTTP_BEARER = HTTPBearer(auto_error=False)
 
 
-def _parse_api_keys(raw: str | None) -> Dict[str, Set[str]]:
-    if not raw:
-        return {}
+def _parse_api_keys(s: str) -> Dict[str, Set[str]]:
+    """
+    API_KEYS: "writer1=read,odds:write;reader1=read"
+    -> {"writer1": {"read","odds:write"}, "reader1":{"read"}}
+    """
     out: Dict[str, Set[str]] = {}
-    for entry in raw.split(";"):
-        entry = entry.strip()
-        if not entry:
+    if not s:
+        return out
+    for part in s.split(";"):
+        part = part.strip()
+        if not part:
             continue
-        if "=" not in entry:
+        if "=" not in part:
             continue
-        key, scopes = entry.split("=", 1)
-        scope_set = {s.strip() for s in scopes.split(",") if s.strip()}
-        out[key.strip()] = scope_set
+        key, scopes_str = part.split("=", 1)
+        scopes = {x.strip() for x in scopes_str.split(",") if x.strip()}
+        out[key.strip()] = scopes
     return out
 
 
-_API_KEYS: Dict[str, Set[str]] = _parse_api_keys(settings.API_KEYS)
-
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-def require_scopes(*required: str) -> Callable:
+def _parse_jwt_secrets(s: str) -> Dict[str, str]:
     """
-    Dependency som:
-    - Läser X-API-Key
-    - validerar key
-    - kräver att ALLA 'required' scopes finns
+    "v1:secret1,v2:secret2" -> {"v1":"secret1", "v2":"secret2"}
     """
-    required_set = set(required)
+    out: Dict[str, str] = {}
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            continue
+        kid, secret = part.split(":", 1)
+        out[kid.strip()] = secret.strip()
+    return out
 
-    def _dep(api_key: str | None = Security(api_key_header), request: Request = None):
-        # Tillåt GET utan auth om ingen scope krävs (dvs. require_scopes() kallad utan args)
-        if not required_set and api_key is None:
-            return
 
-        if api_key is None or api_key not in _API_KEYS:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid API key",
-                headers={"WWW-Authenticate": "ApiKey"},
-            )
+def _parse_kids(s: str) -> Set[str]:
+    return {x.strip() for x in s.split(",") if x.strip()}
 
-        granted = _API_KEYS[api_key]
-        if not required_set.issubset(granted):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient scopes; required: {sorted(required_set)}, granted: {sorted(granted)}",
-            )
 
-        if request is not None:
-            request.state.api_key = api_key
-            request.state.scopes = granted
+API_KEYS_MAP = _parse_api_keys(os.getenv("API_KEYS", ""))
+JWT_SECRETS = _parse_jwt_secrets(JWT_SECRETS_RAW)
+JWT_ACCEPTED_KIDS = _parse_kids(JWT_ACCEPTED_KIDS_RAW)
+
+
+class Principal:
+    def __init__(self, sub: str, scopes: Iterable[str]) -> None:
+        self.sub = sub
+        self.scopes = set(scopes)
+
+    def has_scopes(self, required: Iterable[str]) -> bool:
+        req = set(required)
+        return req.issubset(self.scopes)
+
+
+def _principal_from_apikey(x_api_key: Optional[str]) -> Optional[Principal]:
+    if not x_api_key:
+        return None
+    scopes = API_KEYS_MAP.get(x_api_key)
+    if not scopes:
+        # okänd nyckel
+        raise HTTPException(status_code=401, detail="invalid_api_key")
+    return Principal(sub=x_api_key, scopes=scopes)
+
+
+def _principal_from_jwt(
+    auth: Optional[HTTPAuthorizationCredentials],
+) -> Optional[Principal]:
+    if not auth:
+        return None
+    token = auth.credentials
+    try:
+        header = jwt.get_unverified_header(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="invalid_token_header")
+
+    kid = header.get("kid")
+    if JWT_ACCEPTED_KIDS and (kid not in JWT_ACCEPTED_KIDS):
+        raise HTTPException(status_code=401, detail="kid_not_accepted")
+
+    key = None
+    if kid:
+        key = JWT_SECRETS.get(kid)
+    # fallback: om bara en hemlighet finns och ingen kid, använd den
+    if not key and len(JWT_SECRETS) == 1:
+        key = next(iter(JWT_SECRETS.values()))
+
+    if not key:
+        raise HTTPException(status_code=401, detail="unknown_kid_or_no_key")
+
+    try:
+        payload: Dict[str, Any] = jwt.decode(
+            token,
+            key,
+            algorithms=[JWT_ALG],
+            audience=JWT_AUD,
+            issuer=JWT_ISS,
+        )
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail=f"invalid_token: {e.__class__.__name__}"
+        )
+
+    scopes = payload.get("scopes")
+    if scopes is None:
+        # stöd för "scope": "read odds:write"
+        scope_str = payload.get("scope")
+        if isinstance(scope_str, str):
+            scopes = scope_str.split()
+        else:
+            scopes = []
+    elif isinstance(scopes, str):
+        scopes = [scopes]
+
+    sub = payload.get("sub") or "anonymous"
+    return Principal(sub=sub, scopes=scopes)
+
+
+async def get_principal(
+    auth: Optional[HTTPAuthorizationCredentials] = Security(HTTP_BEARER),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> Principal:
+    mode = AUTH_MODE
+    # Om Authorization finns, försök JWT först
+    if auth:
+        p = _principal_from_jwt(auth)
+        if p:
+            return p
+    # Annars försök API-nyckel
+    if x_api_key:
+        p = _principal_from_apikey(x_api_key)
+        if p:
+            return p
+
+    # Inget hittades -> 401 med bra feltext
+    if mode == "jwt":
+        raise HTTPException(status_code=401, detail="missing_bearer_token")
+    if mode == "api_key":
+        raise HTTPException(status_code=401, detail="missing_api_key")
+    # both
+    raise HTTPException(status_code=401, detail="missing_credentials")
+
+
+def require_scopes(*required: str):
+    async def _dep(principal: Principal = Depends(get_principal)) -> Principal:
+        if not principal.has_scopes(required):
+            raise HTTPException(status_code=403, detail="insufficient_scope")
+        return principal
 
     return _dep
