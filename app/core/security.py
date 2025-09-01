@@ -1,156 +1,172 @@
 # app/core/security.py
 from __future__ import annotations
+
 import os
-from typing import Optional, Set, Dict, Tuple
-from fastapi import Depends, Header, HTTPException, Request
-import jwt  # PyJWT
+from typing import Optional, Iterable, Set, Dict, Any
 
+from fastapi import Depends, Header, HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import jwt
 
-def _env() -> dict:
-    return {
-        "auth_mode": os.getenv("AUTH_MODE", "both").lower(),
-        "api_keys": os.getenv("API_KEYS", ""),
-        "jwt_alg": os.getenv("JWT_ALG", "HS256"),
-        "jwt_iss": os.getenv("JWT_ISSUER"),
-        "jwt_aud": os.getenv("JWT_AUDIENCE"),
-        # rotation (enkelt)
-        "jwt_secret": os.getenv("JWT_SECRET"),
-        "jwt_prev": os.getenv("JWT_PREVIOUS_SECRET"),
-        # KID-ring
-        "jwt_secrets": os.getenv("JWT_SECRETS", ""),  # "v1:sec1,v2:sec2"
-        "jwt_accepted_kids": os.getenv("JWT_ACCEPTED_KIDS", ""),  # "v1,v2"
-    }
+# ---- Konfig från env ----
+AUTH_MODE = os.getenv("AUTH_MODE", "both").lower()  # "api_key" | "jwt" | "both"
+
+JWT_ALG = os.getenv("JWT_ALG", "HS256")
+JWT_ISS = os.getenv("JWT_ISSUER", "betting-core")
+JWT_AUD = os.getenv("JWT_AUDIENCE", "betting-clients")
+JWT_SECRETS_RAW = os.getenv("JWT_SECRETS", "")  # ex: "v1:testsecret1,v2:testsecret2"
+JWT_ACCEPTED_KIDS_RAW = os.getenv("JWT_ACCEPTED_KIDS", "")  # ex: "v1,v2"
+
+HTTP_BEARER = HTTPBearer(auto_error=False)
 
 
 def _parse_api_keys(s: str) -> Dict[str, Set[str]]:
+    """
+    API_KEYS: "writer1=read,odds:write;reader1=read"
+    -> {"writer1": {"read","odds:write"}, "reader1":{"read"}}
+    """
     out: Dict[str, Set[str]] = {}
     if not s:
         return out
-    for part in filter(None, (p.strip() for p in s.split(";"))):
+    for part in s.split(";"):
+        part = part.strip()
+        if not part:
+            continue
         if "=" not in part:
             continue
         key, scopes_str = part.split("=", 1)
-        scopes = {x for x in scopes_str.replace(",", " ").split() if x}
+        scopes = {x.strip() for x in scopes_str.split(",") if x.strip()}
         out[key.strip()] = scopes
     return out
 
 
-def _parse_kid_secrets(s: str) -> Dict[str, str]:
-    # "v1:sec1,v2:sec2"
+def _parse_jwt_secrets(s: str) -> Dict[str, str]:
+    """
+    "v1:secret1,v2:secret2" -> {"v1":"secret1", "v2":"secret2"}
+    """
     out: Dict[str, str] = {}
-    if not s:
-        return out
-    for part in filter(None, (p.strip() for p in s.split(","))):
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
         if ":" not in part:
             continue
-        kid, sec = part.split(":", 1)
-        out[kid.strip()] = sec.strip()
+        kid, secret = part.split(":", 1)
+        out[kid.strip()] = secret.strip()
     return out
 
 
-def _parse_csv_set(s: str) -> Set[str]:
-    return {x for x in s.replace(",", " ").split() if x}
+def _parse_kids(s: str) -> Set[str]:
+    return {x.strip() for x in s.split(",") if x.strip()}
 
 
-def _normalize_scopes(val) -> Set[str]:
-    if isinstance(val, str):
-        return {x for x in val.replace(",", " ").split() if x}
-    if isinstance(val, (list, tuple, set)):
-        return {str(x) for x in val if str(x)}
-    return set()
+API_KEYS_MAP = _parse_api_keys(os.getenv("API_KEYS", ""))
+JWT_SECRETS = _parse_jwt_secrets(JWT_SECRETS_RAW)
+JWT_ACCEPTED_KIDS = _parse_kids(JWT_ACCEPTED_KIDS_RAW)
 
 
-def _decode_with_kid(token: str, env: dict) -> Tuple[Set[str], dict]:
-    headers = jwt.get_unverified_header(token)
-    kid = headers.get("kid")
-    kid_map = _parse_kid_secrets(env["jwt_secrets"])
-    if not kid or kid not in kid_map:
-        raise HTTPException(status_code=401, detail="invalid token (kid)")
-    accepted = _parse_csv_set(env["jwt_accepted_kids"])
-    if accepted and kid not in accepted:
-        raise HTTPException(status_code=401, detail="kid not accepted")
-    secret = kid_map[kid]
-    kwargs = {"algorithms": [env["jwt_alg"]]}
-    if env["jwt_iss"]:
-        kwargs["issuer"] = env["jwt_iss"]
-    if env["jwt_aud"]:
-        kwargs["audience"] = env["jwt_aud"]
-    payload = jwt.decode(token, secret, **kwargs)
-    scopes = _normalize_scopes(payload.get("scopes"))
-    return scopes, payload
+class Principal:
+    def __init__(self, sub: str, scopes: Iterable[str]) -> None:
+        self.sub = sub
+        self.scopes = set(scopes)
+
+    def has_scopes(self, required: Iterable[str]) -> bool:
+        req = set(required)
+        return req.issubset(self.scopes)
 
 
-def _decode_with_rotation(token: str, env: dict) -> Tuple[Set[str], dict]:
-    secrets = [env["jwt_secret"], env["jwt_prev"]]
-    last_err: Optional[Exception] = None
-    for sec in secrets:
-        if not sec:
-            continue
-        try:
-            kwargs = {"algorithms": [env["jwt_alg"]]}
-            if env["jwt_iss"]:
-                kwargs["issuer"] = env["jwt_iss"]
-            if env["jwt_aud"]:
-                kwargs["audience"] = env["jwt_aud"]
-            payload = jwt.decode(token, sec, **kwargs)
-            scopes = _normalize_scopes(payload.get("scopes"))
-            return scopes, payload
-        except Exception as e:
-            last_err = e
-            continue
-    raise last_err or HTTPException(status_code=401, detail="invalid token")
+def _principal_from_apikey(x_api_key: Optional[str]) -> Optional[Principal]:
+    if not x_api_key:
+        return None
+    scopes = API_KEYS_MAP.get(x_api_key)
+    if not scopes:
+        # okänd nyckel
+        raise HTTPException(status_code=401, detail="invalid_api_key")
+    return Principal(sub=x_api_key, scopes=scopes)
 
 
-async def auth_dependency(
-    request: Request,
-    x_api_key: Optional[str] = Header(default=None, convert_underscores=False),
-    authorization: Optional[str] = Header(default=None),
-):
-    env = _env()
+def _principal_from_jwt(
+    auth: Optional[HTTPAuthorizationCredentials],
+) -> Optional[Principal]:
+    if not auth:
+        return None
+    token = auth.credentials
+    try:
+        header = jwt.get_unverified_header(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="invalid_token_header")
 
-    def want_api_key() -> bool:
-        return env["auth_mode"] in ("api_key", "both")
+    kid = header.get("kid")
+    if JWT_ACCEPTED_KIDS and (kid not in JWT_ACCEPTED_KIDS):
+        raise HTTPException(status_code=401, detail="kid_not_accepted")
 
-    def want_jwt() -> bool:
-        return env["auth_mode"] in ("jwt", "both")
+    key = None
+    if kid:
+        key = JWT_SECRETS.get(kid)
+    # fallback: om bara en hemlighet finns och ingen kid, använd den
+    if not key and len(JWT_SECRETS) == 1:
+        key = next(iter(JWT_SECRETS.values()))
 
-    # API key path
-    if want_api_key() and x_api_key:
-        scopes = _parse_api_keys(env["api_keys"]).get(x_api_key)
-        if scopes is None:
-            raise HTTPException(status_code=401, detail="invalid api key")
-        return {"principal": f"apikey:{x_api_key}", "scopes": scopes}
+    if not key:
+        raise HTTPException(status_code=401, detail="unknown_kid_or_no_key")
 
-    # JWT path
-    if want_jwt() and authorization and authorization.lower().startswith("bearer "):
-        token = authorization.split(" ", 1)[1].strip()
-        try:
-            # Först: om KID-ring finns => använd den
-            if env["jwt_secrets"]:
-                scopes, payload = _decode_with_kid(token, env)
-            else:
-                scopes, payload = _decode_with_rotation(token, env)
-            sub = str(payload.get("sub", "unknown"))
-            return {"principal": f"jwt:{sub}", "scopes": scopes}
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="token expired")
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(status_code=401, detail="invalid token")
+    try:
+        payload: Dict[str, Any] = jwt.decode(
+            token,
+            key,
+            algorithms=[JWT_ALG],
+            audience=JWT_AUD,
+            issuer=JWT_ISS,
+        )
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail=f"invalid_token: {e.__class__.__name__}"
+        )
 
-    raise HTTPException(status_code=401, detail="missing credentials")
+    scopes = payload.get("scopes")
+    if scopes is None:
+        # stöd för "scope": "read odds:write"
+        scope_str = payload.get("scope")
+        if isinstance(scope_str, str):
+            scopes = scope_str.split()
+        else:
+            scopes = []
+    elif isinstance(scopes, str):
+        scopes = [scopes]
+
+    sub = payload.get("sub") or "anonymous"
+    return Principal(sub=sub, scopes=scopes)
+
+
+async def get_principal(
+    auth: Optional[HTTPAuthorizationCredentials] = Security(HTTP_BEARER),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> Principal:
+    mode = AUTH_MODE
+    # Om Authorization finns, försök JWT först
+    if auth:
+        p = _principal_from_jwt(auth)
+        if p:
+            return p
+    # Annars försök API-nyckel
+    if x_api_key:
+        p = _principal_from_apikey(x_api_key)
+        if p:
+            return p
+
+    # Inget hittades -> 401 med bra feltext
+    if mode == "jwt":
+        raise HTTPException(status_code=401, detail="missing_bearer_token")
+    if mode == "api_key":
+        raise HTTPException(status_code=401, detail="missing_api_key")
+    # both
+    raise HTTPException(status_code=401, detail="missing_credentials")
 
 
 def require_scopes(*required: str):
-    needed = set()
-    for r in required:
-        needed.update(_normalize_scopes(r))
-
-    async def _dep(auth=Depends(auth_dependency)):
-        have = set(auth.get("scopes", set()))
-        if not needed.issubset(have):
+    async def _dep(principal: Principal = Depends(get_principal)) -> Principal:
+        if not principal.has_scopes(required):
             raise HTTPException(status_code=403, detail="insufficient_scope")
-        return auth
+        return principal
 
     return _dep
